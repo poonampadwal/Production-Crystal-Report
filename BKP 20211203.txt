@@ -1,0 +1,193 @@
+CREATE Procedure "NCM_WasteNonUsable_Details" (IN FDate Timestamp, TDate Timestamp, loc varchar(50))
+ AS 
+
+
+BEGIN
+
+Select		Upper(b."ItmsGrpNam")	"ItemGrp",
+			Upper((Case When a."EvalSystem" = 'F' Then 'NonUsable' When a."EvalSystem" = 'S' Then 'Usable' End))	"EvalSys",
+			a."ItemCode"		"ItemCode",
+			a."ItemName"		"ItemName",
+			a."InvntItem",
+			
+			Case when :Loc ='1' then a."U_Construction" else a."U_Construction" end as "Construction",
+			
+			
+			IfNull((Select (Case When Sum((IfNull(g."InQty",0) - IfNull(g."OutQty",0))) > 0 
+			Then (Sum((IfNull(g."InQty",0) - IfNull(g."OutQty",0)))/1000) Else 0 End) 
+					From OINM g 
+					Where g."ItemCode" = a."ItemCode" And g."DocDate" < :FDate and (g."Location"=:loc or :loc=0)),0) "OpenStock",
+					
+			IfNull((Select 	(Case When Sum(j."Qty") > 0 Then (Sum(j."Qty")/1000) Else 0 End) 
+					From
+						(	 Select Sum(IfNull(z."Quantity",0)) "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry"
+							 Where z."ItemCode" = a."ItemCode" And y."DocDate" = :TDate And 
+							 IfNull(y."U_SeriesType",'Consume') = 'Consume' and (z."LocCode"=:loc or :loc=0)
+							 Group By z."DocEntry",z."ObjType",y."DocDate"
+						     
+							Union All
+						     
+							 Select (Case	when 'B' In (Select distinct WOR1."IssueType" 
+							 From WOR1 Where WOR1."DocEntry" = z."BaseEntry" And WOR1."ItemCode" =a."ItemCode")
+											Then (Select sum(WOR1."IssuedQty") 
+											From WOR1 Where WOR1."DocEntry" = z."BaseEntry" And WOR1."ItemCode" = a."ItemCode")*(-1)
+											Else 0
+									 End)  "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry" 
+							 Where  y."DocDate" = :TDate And IfNull(y."U_SeriesType",'Consume') = 'Consume'
+								    And (z."ItemCode" In (Select ITT1."Father"
+								     From ITT1 Where ITT1."Code" = a."ItemCode") and (z."LocCode"=:loc or :loc=0))
+							 Group By z."DocEntry",z."ObjType",y."DocDate", z."BaseEntry",z."ItemCode"
+							 ) j
+					  ),0) 	"Prod_Recvd",
+				
+
+			IfNull((Select 	(Case When Sum(j."Qty") > 0 Then (Sum(j."Qty")/1000) Else 0 End) 
+					From
+						(	 Select Sum(IfNull(z."Quantity",0)) "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry"
+							 Where z."ItemCode" = a."ItemCode" And y."DocDate" 
+							 Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Consume' 
+							 and (z."LocCode"=:loc or :loc=0)
+							 Group By z."DocEntry",z."ObjType",y."DocDate"
+						   
+							 ) j
+					  
+					  ),0)	"Prod_RecvdMTD",			
+			
+			IfNull((Select 	(Case When Sum(j."Qty") > 0 Then (Sum(j."Qty")/1000) Else 0 End) 
+					From
+						(	 Select Sum(IfNull(z."Quantity",0)) "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry"
+							 Where z."ItemCode" = a."ItemCode" And y."DocDate" = :TDate And 
+							 IfNull(y."U_SeriesType",'Consume') = 'Transfer' and (z."LocCode"=:loc or :loc=0)
+							 Group By z."DocEntry",z."ObjType",y."DocDate"
+						     
+							Union All
+						     
+							 Select (Case	when 'B' In (Select distinct WOR1."IssueType" From WOR1 Where WOR1."DocEntry" = z."BaseEntry" And WOR1."ItemCode" =a."ItemCode")
+											Then (Select sum(WOR1."IssuedQty") 
+											From WOR1 Where WOR1."DocEntry" = z."BaseEntry" And WOR1."ItemCode" = a."ItemCode")*(-1)
+											Else 0
+									 End)  "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry" 
+							 Where  y."DocDate" = :TDate  And IfNull(y."U_SeriesType",'Consume') = 'Transfer'
+								    And (z."ItemCode" In (Select ITT1."Father" 
+								    From ITT1 Where ITT1."Code" = a."ItemCode") and (z."LocCode"=:loc or :loc=0))
+							 Group By z."DocEntry",z."ObjType",y."DocDate", z."BaseEntry",z."ItemCode"
+							 ) j
+					  ),0) "Transf_Recvd",
+			
+			
+			IfNull((Select 	(Case When Sum(j."Qty") > 0 Then (Sum(j."Qty")/1000) Else 0 End) 
+					From
+						(	 Select Sum(IfNull(z."Quantity",0)) "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry"
+							 Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate And
+							  IfNull(y."U_SeriesType",'Consume') ='Transfer' and (z."LocCode"=:loc or :loc=0)
+							 Group By z."DocEntry",z."ObjType",y."DocDate"
+						     
+							Union All
+						     
+							 Select (Case	when 'B' In (Select distinct WOR1."IssueType" From WOR1 Where WOR1."DocEntry" = z."BaseEntry" And WOR1."ItemCode" =a."ItemCode")
+											Then (Select sum(WOR1."IssuedQty") 
+											From WOR1 Where WOR1."DocEntry" = z."BaseEntry" And WOR1."ItemCode" = a."ItemCode")*(-1)
+											Else 0
+									 End)  "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry" 
+							 Where  y."DocDate" Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Transfer'
+								    And (z."ItemCode" In (Select ITT1."Father" 
+								    From ITT1 Where ITT1."Code" = a."ItemCode") and (z."LocCode"=:loc or :loc=0))
+							 Group By z."DocEntry",z."ObjType",y."DocDate", z."BaseEntry",z."ItemCode"
+							 ) j
+					  
+					  ),0) "Transf_MTD",
+			
+			
+			IfNull((Select (Case When Sum(IfNull(z."Quantity",0)) > 0 Then (Sum(IfNull(z."Quantity",0))/1000) Else 0 End) 
+					From IGE1 z Inner Join OIGE y On y."DocEntry" = z."DocEntry"
+  Where z."ItemCode" = a."ItemCode" And y."DocDate" = :TDate  And IfNull(y."U_SeriesType",'Consume') = 'Consume' and (z."LocCode"=:loc or :loc=0)),0) 
+				+   IfNull((	Select (Case When Sum(IfNull(z."InvQty",0)) > 0 Then (Sum(IfNull(z."InvQty",0))/1000) Else 0 End) 
+					From INV1 z Inner Join OINV y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" = :TDate and (z."LocCode"=:loc or :loc=0 ) and y."CANCELED"='N' ),0) 
+			
+				"ConsumedRecvd",
+			
+			
+			IfNull((Select (Case When Sum(IfNull(z."Quantity",0)) > 0 Then (Sum(IfNull(z."Quantity",0))/1000) Else 0 End) 
+					From IGE1 z Inner Join OIGE y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Consume' and (z."LocCode"=:loc or :loc=0)),0) 
+					+  IfNull((	Select (Case When Sum(IfNull(z."InvQty",0)) > 0 Then (Sum(IfNull(z."InvQty",0))/1000) Else 0 End) 
+						From INV1 z Inner Join OINV y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate and (z."LocCode"=:loc or :loc=0 )and y."CANCELED"='N'),0)
+				"ConsumedMTD",
+			IfNull((Select (Case When Sum(IfNull(z."Quantity",0)) > 0 Then (Sum(IfNull(z."Quantity",0))/1000) Else 0 End) 
+					From IGE1 z Inner Join OIGE y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" = :TDate  And IfNull(y."U_SeriesType",'Consume') = 'Transfer' and (z."LocCode"=:loc or :loc=0)),0) 
+				"TransferRecvd",
+			IfNull((Select (Case When Sum(IfNull(z."Quantity",0)) > 0 Then (Sum(IfNull(z."Quantity",0))/1000) Else 0 End) 
+					From IGE1 z Inner Join OIGE y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Transfer' and (z."LocCode"=:loc or :loc=0)),0) 
+				"TransferMTD",
+			-----closing stock	
+			(  IfNull(( Select (Case When Sum((IfNull(g."InQty",0) - IfNull(g."OutQty",0))) > 0 Then (Sum((IfNull(g."InQty",0) - IfNull(g."OutQty",0)))/1000) Else 0 End) 
+						From OINM g Where g."ItemCode" = a."ItemCode" And g."DocDate" < :FDate and (g."Location"=:loc or :loc=0)),0)
+			 
+			 + IfNull((Select 	(Case When Sum(j."Qty") > 0 Then (Sum(j."Qty")/1000) Else 0 End) 
+					From
+						(	 Select Sum(IfNull(z."Quantity",0)) "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry"
+							 Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Consume' and (z."LocCode"=:loc or :loc=0)
+							 Group By z."DocEntry",z."ObjType",y."DocDate"
+						     
+							
+							 ) j
+					 
+					  ),0)
+			 
+			 + IfNull((Select 	(Case When Sum(j."Qty") > 0 Then (Sum(j."Qty")/1000) Else 0 End) 
+					From
+						(	 Select Sum(IfNull(z."Quantity",0)) "Qty"
+							 From	IGN1 z 
+									Inner Join OIGN y On y."DocEntry" = z."DocEntry"
+							 Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Transfer' and (z."LocCode"=:loc or :loc=0)
+							 Group By z."DocEntry",z."ObjType",y."DocDate"
+						     
+						
+							 ) j
+					 
+					  ),0)
+					  
+			- IfNull(( Select (Case When Sum(IfNull(z."Quantity",0)) > 0 Then (Sum(IfNull(z."Quantity",0))/1000) Else 0 End)  
+						From IGE1 z Inner Join OIGE y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Consume' and (z."LocCode"=:loc or :loc=0)),0) 
+
+			 - IfNull(( Select (Case When Sum(IfNull(z."Quantity",0)) > 0 Then (Sum(IfNull(z."Quantity",0))/1000) Else 0 End) 
+						From IGE1 z Inner Join OIGE y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate And IfNull(y."U_SeriesType",'Consume') = 'Transfer' and (z."LocCode"=:loc or :loc=0)),0) 
+			-IfNull((	Select (Case When Sum(IfNull(z."InvQty",0)) > 0 Then (Sum(IfNull(z."InvQty",0))/1000) Else 0 End) 
+						From INV1 z Inner Join OINV y On y."DocEntry" = z."DocEntry" Where z."ItemCode" = a."ItemCode" And y."DocDate" Between :FDate And :TDate and (z."LocCode"=:loc or :loc=0 )and y."CANCELED"='N'),0)
+			
+			
+			)	"ClStock"
+	
+			
+	From	OITM a
+			Inner Join OITB b On b."ItmsGrpCod" = a."ItmsGrpCod"
+			Inner Join OITW c On c."ItemCode" = a."ItemCode"
+
+	Where	1=1
+			And a."validFor" = 'Y'
+			--- And b."ItmsGrpCod" In ('206') --('Waste-Non Usable') -- Poly Test
+			--And b."ItmsGrpCod" In ('209') --('Waste -Non Usable') -- Poly Live
+			And b."ItmsGrpCod" In (103)
+            and a."EvalSystem" = 'F'
+            And a."InvntItem" = 'Y'
+
+	Group By a."ItemCode",a."ItemName",a."EvalSystem",b."ItmsGrpNam",a."U_Construction",a."InvntItem"
+	Having  a."U_Construction" <> ''
+	order by --b."ItmsGrpNam"
+           "ClStock" desc;
+End;
